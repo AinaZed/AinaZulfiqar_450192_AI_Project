@@ -1,0 +1,208 @@
+# ~450192 Aina Zulfiqar
+# ~Snake Game AI Project
+
+import tkinter as tk
+import random
+
+class SnakeGame:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Snake Game")
+        self.master.geometry("700x700")
+        self.master.resizable(False, False)
+
+        self.canvas = tk.Canvas(self.master, bg="black", width=700, height=700)
+        self.canvas.pack()
+
+        self.game_running = True
+
+        # Player Snake
+        self.snake = [(200, 200), (180, 200), (160, 200)]
+        self.direction = "Right"
+        self.player_score = 0
+
+        # AI Enemy Snake
+        self.enemy_snake = [(600, 600), (620, 600), (640, 600)]
+        self.enemy_direction = random.choice(["Right", "Left", "Up", "Down"])
+        self.enemy_score = 0
+        self.enemy_update_time = 250
+
+        self.obstacles = self.create_obstacles()
+        self.food = self.create_food()
+        self.player_score_text = self.canvas.create_text(130, 20, text=f"Player Score: {self.player_score}", fill="white", font=("Arial", 24))
+        self.enemy_score_text = self.canvas.create_text(600, 20, text=f"AI Score: {self.enemy_score}", fill="white", font=("Arial", 24))
+
+        # Timer
+        self.timer = 60  # 60 seconds
+        self.timer_text = self.canvas.create_text(350, 20, text=f"Time: {self.timer}", fill="white", font=("Arial", 24))
+        self.update_timer()
+
+        self.master.bind("<KeyPress>", self.change_direction)
+
+        self.update()
+        self.move_enemy_snake()
+
+    def create_food(self):
+        while True:
+            x = random.randint(0, 34) * 20
+            y = random.randint(0, 34) * 20
+            if (x, y) not in self.snake and (x, y) not in self.enemy_snake and all((x, y) not in obs for obs in self.obstacles):
+                return self.canvas.create_rectangle(x, y, x + 20, y + 20, fill="red")
+
+    def create_obstacles(self):
+        obstacles = []
+        for _ in range(25):
+            while True:
+                x = random.randint(0, 34) * 20
+                y = random.randint(0, 34) * 20
+                if (x, y) not in self.snake and (x, y) not in self.enemy_snake and (x, y) not in obstacles:
+                    self.canvas.create_rectangle(x, y, x + 20, y + 20, fill="gray")
+                    obstacles.append((x, y))
+                    break
+        return obstacles
+
+    def move_snake(self):
+        if not self.game_running:
+            return
+
+        head_x, head_y = self.snake[0]
+        if self.direction == "Right":
+            head_x += 20
+        elif self.direction == "Left":
+            head_x -= 20
+        elif self.direction == "Up":
+            head_y -= 20
+        elif self.direction == "Down":
+            head_y += 20
+
+        new_head = (head_x, head_y)
+
+        if head_x < 0 or head_x >= 700 or head_y < 0 or head_y >= 700:
+            self.end_game("Game Over! You hit a wall.")
+            return
+
+        if new_head in self.snake:
+            self.end_game("Game Over! You ran into yourself.")
+            return
+
+        if new_head in self.obstacles:
+            self.end_game("Game Over! You hit an obstacle.")
+            return
+
+        self.snake.insert(0, new_head)
+
+        if not self.has_eaten_food():
+            self.snake.pop()
+
+        self.canvas.delete("snake")
+        for segment in self.snake:
+            self.canvas.create_rectangle(segment[0], segment[1], segment[0] + 20, segment[1] + 20, fill="green", tags="snake")
+
+    def move_enemy_snake(self):
+        if not self.game_running:
+            return
+
+        head_x, head_y = self.enemy_snake[0]
+        food_x, food_y = self.canvas.coords(self.food)[:2]
+
+        if head_x < food_x and self.is_path_clear((head_x + 20, head_y), self.enemy_snake):
+            self.enemy_direction = "Right"
+        elif head_x > food_x and self.is_path_clear((head_x - 20, head_y), self.enemy_snake):
+            self.enemy_direction = "Left"
+        elif head_y < food_y and self.is_path_clear((head_x, head_y + 20), self.enemy_snake):
+            self.enemy_direction = "Down"
+        elif head_y > food_y and self.is_path_clear((head_x, head_y - 20), self.enemy_snake):
+            self.enemy_direction = "Up"
+        else:
+            if not self.is_path_clear((head_x + 20, head_y), self.enemy_snake) and self.enemy_direction == "Right":
+                self.enemy_direction = random.choice(["Left", "Up", "Down"])
+            elif not self.is_path_clear((head_x - 20, head_y), self.enemy_snake) and self.enemy_direction == "Left":
+                self.enemy_direction = random.choice(["Right", "Up", "Down"])
+            elif not self.is_path_clear((head_x, head_y + 20), self.enemy_snake) and self.enemy_direction == "Down":
+                self.enemy_direction = random.choice(["Right", "Left", "Up"])
+            elif not self.is_path_clear((head_x, head_y - 20), self.enemy_snake) and self.enemy_direction == "Up":
+                self.enemy_direction = random.choice(["Right", "Left", "Down"])
+
+        dx, dy = {"Right": (20, 0), "Left": (-20, 0), "Up": (0, -20), "Down": (0, 20)}[self.enemy_direction]
+        new_head = (head_x + dx, head_y + dy)
+
+        if new_head[0] < 0 or new_head[0] >= 700 or new_head[1] < 0 or new_head[1] >= 700:
+            self.end_game("Player wins!")
+            return
+
+        self.enemy_snake.insert(0, new_head)
+
+        if not self.has_eaten_food():
+            self.enemy_snake.pop()
+
+        self.canvas.delete("enemy")
+        for segment in self.enemy_snake:
+            self.canvas.create_rectangle(segment[0], segment[1], segment[0] + 20, segment[1] + 20, fill="purple", tags="enemy")
+
+        self.master.after(self.enemy_update_time, self.move_enemy_snake)
+
+    def has_eaten_food(self):
+        player_head = self.snake[0]
+        enemy_head = self.enemy_snake[0]
+        food_coords = self.canvas.coords(self.food)
+
+        if player_head == (food_coords[0], food_coords[1]):
+            self.canvas.delete(self.food)
+            self.food = self.create_food()
+            self.player_score += 1
+            self.canvas.itemconfig(self.player_score_text, text=f"Player Score: {self.player_score}")
+            return True
+
+        if enemy_head == (food_coords[0], food_coords[1]):
+            self.canvas.delete(self.food)
+            self.food = self.create_food()
+            self.enemy_score += 1
+            self.canvas.itemconfig(self.enemy_score_text, text=f"AI Score: {self.enemy_score}")
+            return True
+
+        return False
+
+    def is_path_clear(self, next_position, snake):
+        return next_position not in snake
+
+    def update_timer(self):
+        if self.timer > 0 and self.game_running:
+            self.timer -= 1
+            self.canvas.itemconfig(self.timer_text, text=f"Time: {self.timer}")
+            self.master.after(1000, self.update_timer)
+        elif self.game_running:
+            self.determine_winner()
+
+    def determine_winner(self):
+        player_length = len(self.snake)
+        enemy_length = len(self.enemy_snake)
+        if player_length > enemy_length:
+            self.end_game("Player wins!")
+        elif player_length < enemy_length:
+            self.end_game("Enemy wins!")
+        else:
+            self.end_game("It's a tie!")
+
+    def end_game(self, message="Game Over!"):
+        self.game_running = False
+        self.canvas.create_text(350, 350, text=message, fill="white", font=("Arial", 24))
+
+    def update(self):
+        if not self.game_running:
+            return
+
+        self.move_snake()
+        self.master.after(200, self.update)
+
+    def change_direction(self, event):
+        if not self.game_running:
+            return
+
+        opposite_directions = {"Right": "Left", "Left": "Right", "Up": "Down", "Down": "Up"}
+        if event.keysym in opposite_directions and event.keysym != opposite_directions[self.direction]:
+            self.direction = event.keysym
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    game = SnakeGame(root)
+    root.mainloop()
